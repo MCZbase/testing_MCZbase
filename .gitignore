@@ -1,0 +1,3 @@
+# identifier files name records that may not be public (see checkPages.sh)
+*.ids
+!example.ids

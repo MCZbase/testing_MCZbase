@@ -1,0 +1,6 @@
+# Identifiers for checkPages.sh -i, one NAME=value per line, read as data.  Copy to a name ending in
+# .ids (ignored by git) and fill in values for one server.  Leave out any to look it up or skip it.
+UUID=00000000-0000-0000-0000-000000000000
+SAVED_SEARCH=Name of a saved search
+# a cataloged item that exists but that an anonymous user may not see; keep it out of the repository
+HIDDEN_GUID=MCZ:Coll:0
