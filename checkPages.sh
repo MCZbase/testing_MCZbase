@@ -6,7 +6,7 @@
 # Copyright 2026 President and Fellows of Harvard College
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 #
-# Usage: ./checkPages.sh [-k] [-i file] [-s] [-a] [-b] https://host
+# Usage: ./checkPages.sh [-k] [-i file] [-s] [-a] [-b] [-x] https://host
 #   -k  accept a certificate that can't be verified, as for a test server with a self-signed one.
 #       Without it, certificates are verified.
 #   -i  read record identifiers (see below) from a file of NAME=value lines.
@@ -19,6 +19,13 @@
 #       developer tools), staff pages are opened too.  The cookie goes only to the site, and only to
 #       the node checker, never on a command line.  Use it only with certificate checking on (no -k)
 #       unless the network to the server is trusted.
+#   -x  with the browser checks (implies -b), also check the accessibility of a few redesigned pages
+#       (ACCESSIBILITY_PAGES below; legacy pages are left out, as they are being replaced): axe-core
+#       (vendor/, checked against its hash before use) for WCAG 2.1 A and AA, and the MCZbase developer
+#       guide's own rules (one <main id="content">, no role="main" on main or role="region" on
+#       section, headings starting at h1 without skipping levels, and no more than one accessible name
+#       on an input).  Issues are listed per page and summarized by rule, as A11Y lines; they don't
+#       count as failures.
 #
 # Record identifiers: routes that need a real record take its identifier from the environment, then
 # from the -i file, or else look one up with the public searches the site's own pages use (the
@@ -35,6 +42,10 @@
 # Library versions: the checks expect the jQuery, jQuery UI and Bootstrap versions below on every
 # page; set JQUERY_FILE, JQUERY_UI_DIR and BOOTSTRAP_DIR to check a server running other versions.
 #
+# Requests identify themselves as MCZbaseTestHarness followed by the first 10 characters of this
+# repository's commit, so they can be told apart in the server's logs.  curl sends it as the user
+# agent; Chromium adds it to its own, so pages still treat it as a browser.
+#
 # Scheduled tasks are not requested: if a refusal failed, the task would run.
 #
 # The exit status is the number of failed checks, at most 255.
@@ -42,6 +53,7 @@
 SLOW=0
 APACHE=0
 BROWSER=0
+ACCESSIBILITY=0
 INSECURE=0
 IDENTIFIER_FILE=""
 while [[ "$1" == -* ]]; do
@@ -51,13 +63,14 @@ while [[ "$1" == -* ]]; do
 		-s) SLOW=1 ;;
 		-a) APACHE=1 ;;
 		-b) BROWSER=1 ;;
+		-x) BROWSER=1; ACCESSIBILITY=1 ;;
 		*) echo "Unknown option $1" >&2; exit 255 ;;
 	esac
 	shift
 done
 HOST="${1%/}"
 if [[ ! "$HOST" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]]; then
-	echo "Usage: $0 [-k] [-i file] [-s] [-a] [-b] https://host" >&2
+	echo "Usage: $0 [-k] [-i file] [-s] [-a] [-b] [-x] https://host" >&2
 	exit 255
 fi
 
@@ -82,11 +95,14 @@ BOOTSTRAP_DIR="${BOOTSTRAP_DIR:-/lib/bootstrap/bootstrap-4.6.2-dist/}"
 # libraries no page should load any longer
 OLD_LIBRARIES="jquery-3\\.5\\.1|jquery-ui-1\\.12\\.1|bootstrap-4\\.5\\.0|jquery-migrate|knockout"
 
-CURL_TLS=()
+HARNESS_COMMIT=$(git -C "$(dirname "$0")" rev-parse --short=10 HEAD 2>/dev/null || echo unknown)
+USER_AGENT="MCZbaseTestHarness$HARNESS_COMMIT"
+# later -A options, such as the health check's, take precedence over this one
+CURL_OPTIONS=(-A "$USER_AGENT")
 if [ "$INSECURE" = "1" ]; then
-	CURL_TLS=(-k)
+	CURL_OPTIONS+=(-k)
 fi
-if ! curl -s "${CURL_TLS[@]}" --max-time 30 -o /dev/null "$HOST/"; then
+if ! curl -s "${CURL_OPTIONS[@]}" --max-time 30 -o /dev/null "$HOST/"; then
 	echo "Can't reach $HOST (for a server with a self-signed certificate, add -k)" >&2
 	exit 255
 fi
@@ -105,7 +121,7 @@ fetch() {
 	shift
 	: > "$WORK/headers"
 	: > "$WORK/body"
-	STATUS=$(curl -s "${CURL_TLS[@]}" --max-time 90 -o "$WORK/body" -D "$WORK/headers" -w '%{http_code}' "$@" "$url")
+	STATUS=$(curl -s "${CURL_OPTIONS[@]}" --max-time 90 -o "$WORK/body" -D "$WORK/headers" -w '%{http_code}' "$@" "$url")
 	LOCATION=$(grep -i '^location:' "$WORK/headers" | head -1 | cut -d' ' -f2- | tr -d '\r')
 	CONTENT_TYPE=$(grep -i '^content-type:' "$WORK/headers" | head -1 | cut -d' ' -f2- | tr -d '\r')
 	CFIDS=$(grep -ic '^set-cookie: CFID=' "$WORK/headers")
@@ -200,7 +216,7 @@ jsonField() {
 # lookUp requests a public search method and saves the response body.
 # @param $1 path and query string.
 lookUp() {
-	curl -s "${CURL_TLS[@]}" --max-time 60 "$HOST$1" > "$WORK/lookup"
+	curl -s "${CURL_OPTIONS[@]}" --max-time 60 "$HOST$1" > "$WORK/lookup"
 }
 
 # requireNumber clears an identifier that isn't a whole number, as one from a lookup response might be.
@@ -212,6 +228,7 @@ requireNumber() {
 	fi
 }
 
+echo "== Requests identified as $USER_AGENT"
 echo "== Looking up identifiers"
 if [ -z "$CATNUM" ] || [ -z "$COLL_OBJECT_ID" ]; then
 	lookUp "/specimens/component/search.cfc?method=getCatalogedItemAutocompleteMeta&term=MCZ:Mamm:"
@@ -365,7 +382,7 @@ checkAssets() {
 	local asset missing=""
 	for asset in $(grep -oE "(src|href)=[\"']/[^\"'?#]*\.(js|css)" "$WORK/body" | sed -E "s/^(src|href)=[\"']//" | sort -u); do
 		if [ -z "${ASSET_STATUS[$asset]}" ]; then
-			ASSET_STATUS[$asset]=$(curl -s "${CURL_TLS[@]}" --max-time 60 -o /dev/null -w '%{http_code}' "$HOST$asset")
+			ASSET_STATUS[$asset]=$(curl -s "${CURL_OPTIONS[@]}" --max-time 60 -o /dev/null -w '%{http_code}' "$HOST$asset")
 		fi
 		if [ "${ASSET_STATUS[$asset]}" != "200" ]; then
 			missing+=" $asset (${ASSET_STATUS[$asset]})"
@@ -374,13 +391,13 @@ checkAssets() {
 		if [[ "$asset" == *.css && -z "${ASSET_STATUS[$asset|urls]}" ]]; then
 			ASSET_STATUS[$asset|urls]=checked
 			local cssDir="${asset%/*}" ref resolved
-			for ref in $(curl -s "${CURL_TLS[@]}" --max-time 60 "$HOST$asset" | perl -0pe 's#/\*.*?\*/##gs' \
+			for ref in $(curl -s "${CURL_OPTIONS[@]}" --max-time 60 "$HOST$asset" | perl -0pe 's#/\*.*?\*/##gs' \
 					| grep -oE "url\(['\"]?[^)'\"]+" | sed -E "s/^url\(['\"]?//" | grep -vE "^(data:|https?:|//|#)" \
 					| sed -E 's/[?#].*$//' | sort -u); do
 				if [[ "$ref" == /* ]]; then resolved="$ref"; else resolved="$cssDir/$ref"; fi
 				resolved=$(echo "$resolved" | sed -E ':a; s#/[^/]+/\.\./#/#; ta; s#/\./#/#g')
 				if [ -z "${ASSET_STATUS[$resolved]}" ]; then
-					ASSET_STATUS[$resolved]=$(curl -s "${CURL_TLS[@]}" --max-time 60 -o /dev/null -w '%{http_code}' "$HOST$resolved")
+					ASSET_STATUS[$resolved]=$(curl -s "${CURL_OPTIONS[@]}" --max-time 60 -o /dev/null -w '%{http_code}' "$HOST$resolved")
 				fi
 				if [ "${ASSET_STATUS[$resolved]}" != "200" ]; then
 					missing+=" $resolved from $asset (${ASSET_STATUS[$resolved]})"
@@ -609,7 +626,40 @@ if [ "$BROWSER" = "1" ]; then
 		# messages are JSON, each ending with a NUL, on file descriptors 3 (to Chromium) and 4 (from it).
 		cat > "$WORK/browserCheck.js" <<'NODE'
 const { spawn } = require("child_process");
-const [, , chrome, profile, settleMs, insecure, ...urls] = process.argv;
+const fs = require("fs");
+const [, , chrome, profile, settleMs, insecure, userAgentTag, axeFile, ...urls] = process.argv;
+const axeSource = axeFile ? fs.readFileSync(axeFile, "utf8") : "";
+// the developer guide's rules that axe-core doesn't check, run in the page; returns a list of issues
+const guideRules = `(() => {
+	const issues = [];
+	const mains = document.querySelectorAll("main");
+	if (mains.length !== 1) { issues.push("guide-main: " + mains.length + " main elements, expected one"); }
+	if (!document.querySelector("main#content")) { issues.push("guide-main: no main with id content (the skip link's target)"); }
+	document.querySelectorAll("main[role=main]").forEach(() => issues.push("guide-main: main has role=main"));
+	const regions = document.querySelectorAll("section[role=region]").length;
+	if (regions) { issues.push("guide-section: " + regions + " section elements with role=region"); }
+	const visible = (e) => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+	const headings = [...document.querySelectorAll("h1,h2,h3,h4,h5,h6,[role=heading]")].filter(visible).map((h) => ({
+		level: Number(h.getAttribute("aria-level") || (h.tagName.match(/^H([1-6])$/) || [0, 2])[1]), text: h.textContent.trim().slice(0, 40) }));
+	if (headings.length && headings[0].level !== 1) { issues.push("guide-headings: first heading is h" + headings[0].level + " (" + headings[0].text + ")"); }
+	for (let i = 1; i < headings.length; i++) {
+		if (headings[i].level > headings[i - 1].level + 1) {
+			issues.push("guide-headings: h" + headings[i - 1].level + " then h" + headings[i].level + " (" + headings[i].text + ")");
+		}
+	}
+	document.querySelectorAll("input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([type=image]),select,textarea").forEach((field) => {
+		const mechanisms = [];
+		if ((field.id && document.querySelector("label[for='" + CSS.escape(field.id) + "']")) || field.closest("label")) { mechanisms.push("label"); }
+		if (field.hasAttribute("aria-labelledby")) { mechanisms.push("aria-labelledby"); }
+		if (field.hasAttribute("aria-label")) { mechanisms.push("aria-label"); }
+		if (field.hasAttribute("title")) { mechanisms.push("title"); }
+		if (mechanisms.length > 1) { issues.push("guide-name: " + (field.id || field.name || field.tagName.toLowerCase()) + " is named by " + mechanisms.join(", ")); }
+	});
+	return issues;
+})()`;
+const axeRun = `axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] },
+	resultTypes: ["violations"] }).then((result) => result.violations.map((v) => v.impact + " " + v.id + " (" + v.nodes.length +
+	"): " + v.help + " [" + v.nodes.slice(0, 2).map((n) => n.target.join(" ")).join("; ") + "]"))`;
 const cookie = process.env.MCZ_COOKIE || "";
 const args = ["--headless=new", "--disable-gpu", "--remote-debugging-pipe", "--no-first-run",
 	"--user-data-dir=" + profile, "about:blank"];
@@ -646,7 +696,11 @@ function send(method, params = {}, sessionId) {
 }
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 (async () => {
-	for (const url of urls) {
+	const { userAgent } = await send("Browser.getVersion");
+	for (const listed of urls) {
+		// an a11y: prefix marks a page for the accessibility checks
+		const checkAccessibility = listed.startsWith("a11y:");
+		const url = checkAccessibility ? listed.slice(5) : listed;
 		const site = new URL(url).origin;
 		const problems = [], requests = {};
 		let loaded = false;
@@ -692,6 +746,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 		};
 		listeners.add(listener);
 		for (const domain of ["Runtime", "Log", "Network", "Page"]) { await send(domain + ".enable", {}, sessionId); }
+		await send("Network.setUserAgentOverride", { userAgent: userAgent + " " + userAgentTag }, sessionId);
 		if (cookie) {
 			const cookies = cookie.split(";").map((c) => c.trim()).filter((c) => c.includes("="))
 				.map((c) => ({ name: c.slice(0, c.indexOf("=")), value: c.slice(c.indexOf("=") + 1), url: site,
@@ -703,9 +758,19 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 		if (!loaded) { problems.push("no load event in 60 seconds"); }
 		await sleep(Number(settleMs));
 		listeners.delete(listener);
-		await send("Target.closeTarget", { targetId });
 		const unique = [...new Set(problems)];
 		console.log((unique.length ? "FAIL  " : "PASS  ") + url.replace(site, "") + (unique.length ? "\n      " + unique.join("\n      ") : ""));
+		if (axeSource && checkAccessibility && loaded) {
+			const evaluate = async (expression) => {
+				const reply = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, sessionId);
+				if (reply.exceptionDetails) { return ["checker: " + reply.exceptionDetails.text]; }
+				return reply.result.value || [];
+			};
+			await send("Runtime.evaluate", { expression: axeSource }, sessionId);
+			const issues = [...(await evaluate(axeRun)), ...(await evaluate(guideRules))];
+			for (const issue of issues) { console.log("A11Y  " + url.replace(site, "") + "  " + issue); }
+		}
+		await send("Target.closeTarget", { targetId });
 	}
 	await send("Browser.close").catch(() => {});
 })().catch((error) => { console.log("FAIL  browser checker: " + error.message); }).finally(() => browser.kill());
@@ -729,12 +794,37 @@ NODE
 		else
 			skip "staff pages in the browser" MCZ_COOKIE
 		fi
+		AXE_FILE=""
+		if [ "$ACCESSIBILITY" = "1" ]; then
+			AXE_FILE="$(dirname "$0")/vendor/axe-core-4.13.0/axe.min.js"
+			if ! echo "c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1  $AXE_FILE" | sha256sum -c --status 2>/dev/null; then
+				echo "$AXE_FILE is missing or doesn't match its recorded hash; not running it" >&2
+				exit 255
+			fi
+		fi
+		# A proof of concept on redesigned public pages, Projects.cfm being the first on Tabulator.
+		ACCESSIBILITY_PAGES=(/Specimens.cfm /Taxa.cfm /Projects.cfm /media/findMedia.cfm)
+		[ -n "$CATNUM" ] && ACCESSIBILITY_PAGES+=("/guid/MCZ:Mamm:$CATNUM")
+		[ -n "$TAXON_NAME" ] && ACCESSIBILITY_PAGES+=("/name/$(urlEncode "$TAXON_NAME")")
 		BROWSER_URLS=()
 		for page in "${BROWSER_PAGES[@]}"; do
-			BROWSER_URLS+=("$HOST$page")
+			if [ "$ACCESSIBILITY" = "1" ] && [[ " ${ACCESSIBILITY_PAGES[*]} " == *" $page "* ]]; then
+				BROWSER_URLS+=("a11y:$HOST$page")
+			else
+				BROWSER_URLS+=("$HOST$page")
+			fi
 		done
-		node "$WORK/browserCheck.js" "$CHROME" "$WORK/chrome-profile" 4000 "$INSECURE" "${BROWSER_URLS[@]}" > "$WORK/browser.txt" 2>&1
-		cat "$WORK/browser.txt"
+		node "$WORK/browserCheck.js" "$CHROME" "$WORK/chrome-profile" 4000 "$INSECURE" "$USER_AGENT" "$AXE_FILE" "${BROWSER_URLS[@]}" > "$WORK/browser.txt" 2>&1
+		grep -v "^A11Y  " "$WORK/browser.txt"
+		if [ "$ACCESSIBILITY" = "1" ]; then
+			echo "== Accessibility of ${#ACCESSIBILITY_PAGES[@]} redesigned pages: axe-core $(grep -o 'axe v[0-9.]*' "$AXE_FILE" | head -1 | cut -c6-) (WCAG 2.1 A and AA) and the developer guide's rules"
+			grep "^A11Y  " "$WORK/browser.txt"
+			echo "== Accessibility issues by rule: pages, rule"
+			# the rule is the word after the impact for axe-core, or the guide- name
+			grep "^A11Y  " "$WORK/browser.txt" | awk '{ page = $2; rule = ($3 ~ /^guide-/) ? $3 : $4; sub(/:$/, "", rule);
+				if (!seen[page "|" rule]++) { count[rule]++ } } END { for (r in count) printf "%6d  %s\n", count[r], r }' | sort -rn
+			A11Y_ISSUES=$(grep -c "^A11Y  " "$WORK/browser.txt")
+		fi
 		PASSED=$((PASSED + $(grep -c "^PASS  " "$WORK/browser.txt")))
 		FAILED=$((FAILED + $(grep -c "^FAIL  " "$WORK/browser.txt")))
 	fi
@@ -750,7 +840,7 @@ if [ "$SLOW" = "1" ]; then
 	checkUrlTokenKept "url token client: after 7 minutes its session is kept"
 fi
 
-echo "== $PASSED passed, $FAILED failed, $SKIPPED skipped"
+echo "== $PASSED passed, $FAILED failed, $SKIPPED skipped${A11Y_ISSUES:+, $A11Y_ISSUES accessibility issues}"
 if [ "$FAILED" -gt 255 ]; then
 	exit 255
 fi

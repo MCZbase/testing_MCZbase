@@ -7,9 +7,15 @@ Checks an MCZbase server from outside, as a visitor would: routes and redirects,
 pages refused to visitors, the pages a visitor may open and the files they load, the legacy specimen
 search, and the `/guid/`, `/name/`, `/media/` and other record routes.  With `-b` it also opens pages in
 headless Chromium and reports script errors and failed requests; with a logged-in session cookie in
-`MCZ_COOKIE` it opens staff pages too.  The usage and options are described at the top of the script.
+`MCZ_COOKIE` it opens staff pages too.  With `-x` it also checks the accessibility of a few redesigned
+pages, with axe-core (WCAG 2.1 A and AA) and the MCZbase developer guide's own rules; legacy pages are
+left out, as they are being replaced.  The usage and options are described at the top of the script.
 
-Needs bash, curl and perl; `-b` also needs chromium and node (no packages).
+Needs bash, curl and perl; `-b` and `-x` also need chromium and node (no packages).
+
+`vendor/axe-core-4.13.0/` holds axe-core's `axe.min.js` from the npm release, checked against the
+registry's integrity hash when added, with its license (MPL-2.0).  The script checks the file's
+SHA-256 before running it; update the hash in `checkPages.sh` when updating axe-core.
 
 ```
 # a test server with a self-signed certificate
