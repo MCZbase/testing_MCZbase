@@ -356,15 +356,17 @@ for page in /Bulkloader/BulkloaderCheck.cfm /Bulkloader/index.cfm /Reports/LoanI
 	check "anonymous $page" "$page" "403" "1" "-" "Access denied" "allowerror"
 	requireFooter "anonymous $page"
 done
-for page in AddrPick AgentPick condition DeleteEncumbrance findAccn findAgent findAgentName findBorrow \
-		findCatalogedItem findCollEvent findDeaccession findDOI findHigherGeog findJournal findLoan findMedia \
+for page in AddrPick condition DeleteEncumbrance findAccn findAgent findAgentName findBorrow \
+		findCatalogedItem findCollEvent findDeaccession findDOI findHigherGeog findLoan findMedia \
 		findNamedGroup findPart_Attribute findPart findPermit findPublication getAgentName getAttributeValues \
-		getPart_Attribute index KewAbbrPick LocalityPick preserve SciNamePick selectPermit TaxaPick; do
+		getPart_Attribute index KewAbbrPick LocalityPick preserve TaxaPick; do
 	check "anonymous /picks/$page.cfm" "/picks/$page.cfm" "403" "1" "-" "Access denied" "allowerror"
 	requireFooter "anonymous /picks/$page.cfm"
 done
-# uploadMedia.cfm uses cfzip, so it doesn't compile where ColdFusion's zip package isn't installed
-check "anonymous /tools/uploadMedia.cfm" "/tools/uploadMedia.cfm" "403|500" "-" "-" "Access denied|zip package is not installed" "allowerror"
+# Upload pages removed from MCZbase; a server still holding a copy would answer 200 or 500
+for page in /tools/uploadMedia.cfm /info/upMedia.cfm /info/upMediaPreview.cfm; do
+	check "removed $page" "$page" "403|404" "-" "-" "-" "allowerror"
+done
 # Elsewhere the header's role check refuses them, ending the page after its message, so without a footer.
 for page in /DataEntry.cfm /media.cfm /info/queryStats.cfm /info/recentgeorefs.cfm /loanByBarcode.cfm \
 		/containers/browseContainers.cfm /Citation.cfm /reporting/Reports.cfm /Transactions.cfm /TAG.cfm; do
@@ -790,7 +792,7 @@ NODE
 				/info/queryStats.cfm /info/recentgeorefs.cfm /containers/browseContainers.cfm /Citation.cfm
 				/loanByBarcode.cfm /Bulkloader/index.cfm /tools/BulkPartSample.cfm /users/UserProfile.cfm
 				/localities/Localities.cfm /localities/CollectingEvents.cfm /publications/Journals.cfm
-				/grouping/NamedCollection.cfm)
+				/grouping/NamedCollection.cfm /metrics/Dashboard.cfm)
 		else
 			skip "staff pages in the browser" MCZ_COOKIE
 		fi
