@@ -125,7 +125,7 @@ JQUERY_FILE="${JQUERY_FILE:-/lib/jquery/jquery-3.7.1.min.js}"
 JQUERY_UI_DIR="${JQUERY_UI_DIR:-/lib/jquery-ui-1.14.1/}"
 BOOTSTRAP_DIR="${BOOTSTRAP_DIR:-/lib/bootstrap/bootstrap-4.6.2-dist/}"
 # libraries no page should load any longer
-OLD_LIBRARIES="jquery-3\\.5\\.1|jquery-ui-1\\.12\\.1|bootstrap-4\\.5\\.0|jquery-migrate|knockout"
+OLD_LIBRARIES="jquery-3\\.5\\.1|jquery-ui-1\\.12\\.1|bootstrap-4\\.5\\.0|jquery-migrate|knockout|multizoom"
 
 HARNESS_COMMIT=$(git -C "$(dirname "$0")" rev-parse --short=10 HEAD 2>/dev/null || echo unknown)
 USER_AGENT="MCZbaseTestHarness$HARNESS_COMMIT"
@@ -891,7 +891,7 @@ NODE
 				/info/queryStats.cfm /info/recentgeorefs.cfm /containers/browseContainers.cfm /Citation.cfm
 				/loanByBarcode.cfm /Bulkloader/index.cfm /tools/BulkPartSample.cfm /users/UserProfile.cfm
 				/localities/Localities.cfm /localities/CollectingEvents.cfm /publications/Journals.cfm
-				/grouping/NamedCollection.cfm /metrics/Dashboard.cfm)
+				/grouping/NamedCollection.cfm /metrics/Dashboard.cfm /media/debugMediaGallery.cfm)
 		else
 			skip "staff pages in the browser" MCZ_COOKIE
 		fi
