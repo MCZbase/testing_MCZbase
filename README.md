@@ -26,3 +26,19 @@ SHA-256 before running it; update the hash in `checkPages.sh` when updating axe-
 
 Record identifiers that can't be looked up anonymously go in a `*.ids` file (see `example.ids`), which
 git ignores: one of them names a record that isn't public.
+
+## checkMediaZoom.sh
+
+Tests MCZbase's enlarged view of media images, `/shared/js/media-zoom.js`, in headless Chromium, with
+real mouse, wheel, touch and keyboard input: placement beside the image, sizing, wheel and +/- zoom,
+panning and the lens, scrolling, Escape, collapsing containers, a large image that fails to load,
+touch, the keyboard view, and turning it off.  It needs no server: a static test page in `mediaZoom/`
+runs against the script and stylesheet copied from an MCZbase checkout.
+
+Needs bash, chromium and node (no packages).
+
+```
+./checkMediaZoom.sh ../MCZbase
+```
+
+The same cases can be tried by hand on a server at `/media/debugMediaGallery.cfm`.

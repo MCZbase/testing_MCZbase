@@ -1,0 +1,16 @@
+<!doctype html>
+<!-- Test page for MCZbase's /shared/js/media-zoom.js, used by drive.js; checkMediaZoom.sh copies the
+     script, its stylesheet and the loading indicator in beside it.  large.svg stands in for a large image. -->
+<html><head><meta charset="utf-8"><title>zoom test</title>
+<link rel="stylesheet" href="shared/css/media_zoom.css">
+<style>body{margin:0;font-family:sans-serif} .row{display:flex;justify-content:space-between;padding:10px}</style>
+<script src="shared/js/media-zoom.js"></script></head><body>
+<div class="row">
+ <a id="linkLeft" href="#left" onfocus="mczMediaZoom.focusLink(this)"><img id="left" src="large.svg" width="150" height="112" alt="left" data-mcz-zoom="large.svg" data-mcz-zoom-scale="4" onpointerenter="mczMediaZoom.pointerEnter(this, event)"></a>
+ <a id="linkRight" href="#right" onfocus="mczMediaZoom.focusLink(this)"><img id="right" src="large.svg" width="150" height="112" alt="right" data-mcz-zoom="large.svg" data-mcz-zoom-scale="4" onpointerenter="mczMediaZoom.pointerEnter(this, event)"></a>
+</div>
+<div id="collapseBox" style="padding:10px"><a href="#c" onfocus="mczMediaZoom.focusLink(this)"><img id="collapsed" src="large.svg" width="150" height="112" alt="c" data-mcz-zoom="large.svg?c" data-mcz-zoom-scale="2" onpointerenter="mczMediaZoom.pointerEnter(this, event)"></a></div>
+<div style="padding:10px"><a href="#b" onfocus="mczMediaZoom.focusLink(this)"><img id="broken" src="large.svg" width="90" height="68" alt="b" data-mcz-zoom="nosuch.jpg" data-mcz-zoom-scale="4" onpointerenter="mczMediaZoom.pointerEnter(this, event)"></a></div>
+<div style="padding:10px"><label for="typing">Typing</label> <input id="typing" type="text"></div>
+<div style="height:2000px"></div>
+</body></html>
