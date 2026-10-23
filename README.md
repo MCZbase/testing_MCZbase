@@ -5,11 +5,11 @@ Tools for testing MCZbase behavior.
 
 Checks an MCZbase server from outside, as a visitor would: routes and redirects, session handling,
 pages refused to visitors, the pages a visitor may open and the files they load, the legacy specimen
-search, and the `/guid/`, `/name/`, `/media/` and other record routes.  With `-b` it also opens pages in
+search, the project search and its backing methods, and the `/guid/`, `/name/`, `/media/` and other record routes.  With `-b` it also opens pages in
 headless Chromium and reports script errors and failed requests; with a logged-in session cookie in
 `MCZ_COOKIE` it opens staff pages too.  With `-x` it also checks the accessibility of a few redesigned
 pages, with axe-core (WCAG 2.1 A and AA) and the MCZbase developer guide's own rules; legacy pages are
-left out, as they are being replaced.  The usage and options are described at the top of the script.
+left out, as they are being replaced.  `./checkPages.sh -h` describes the options.
 
 Needs bash, curl and perl; `-b` and `-x` also need chromium and node (no packages).
 

@@ -6,7 +6,7 @@
 # Copyright 2026 President and Fellows of Harvard College
 # Licensed under the Apache License, Version 2.0; see LICENSE.
 #
-# Usage: ./checkPages.sh [-k] [-i file] [-s] [-a] [-b] [-x] https://host
+# Usage: ./checkPages.sh [-h] [-k] [-i file] [-s] [-a] [-b] [-x] https://host
 #   -k  accept a certificate that can't be verified, as for a test server with a self-signed one.
 #       Without it, certificates are verified.
 #   -i  read record identifiers (see below) from a file of NAME=value lines.
@@ -56,21 +56,53 @@ BROWSER=0
 ACCESSIBILITY=0
 INSECURE=0
 IDENTIFIER_FILE=""
+# usage prints how to run this script and what each option does.
+usage() {
+	cat <<USAGE
+Usage: $0 [-h] [-k] [-i file] [-s] [-a] [-b] [-x] https://host
+
+Checks an MCZbase server as a visitor would, and prints PASS, FAIL or SKIP for each check.
+The exit status is the number of failed checks, at most 255.
+
+  -h       show this help.
+  -k       accept a certificate that can't be verified, as on a test server with a
+           self-signed one.  Without it, certificates are verified.
+  -i file  read record identifiers from a file of NAME=value lines (see example.ids).
+           Values already in the environment win.  Without one, identifiers that can be
+           looked up anonymously are; checks needing UUID, SAVED_SEARCH or HIDDEN_GUID
+           are skipped.
+  -s       also run the slow checks, which wait 7 minutes for an unused session to expire.
+  -a       production: also check the old page redirects made by production's Apache
+           rewrite rules (SpecimenDetail.cfm, MediaSet.cfm and the like).
+  -b       also open pages in headless Chromium (needs chromium and node) and fail on
+           script errors, console errors, security errors and failed requests.  With
+           MCZ_COOKIE set to a logged-in browser's "CFID=...; CFTOKEN=...", staff pages
+           are opened too.
+  -x       as -b, and also check the accessibility of a few redesigned pages with
+           axe-core (WCAG 2.1 A and AA) and the developer guide's rules.  Issues are
+           reported as A11Y lines and don't count as failures.
+
+Examples:
+  $0 -k -i test.ids https://test-server.example.edu/
+  $0 -a -b -i production.ids https://production-server.example.edu/
+USAGE
+}
 while [[ "$1" == -* ]]; do
 	case "$1" in
+		-h) usage; exit 0 ;;
 		-k) INSECURE=1 ;;
 		-i) IDENTIFIER_FILE="$2"; shift ;;
 		-s) SLOW=1 ;;
 		-a) APACHE=1 ;;
 		-b) BROWSER=1 ;;
 		-x) BROWSER=1; ACCESSIBILITY=1 ;;
-		*) echo "Unknown option $1" >&2; exit 255 ;;
+		*) echo "Unknown option $1" >&2; usage >&2; exit 255 ;;
 	esac
 	shift
 done
 HOST="${1%/}"
 if [[ ! "$HOST" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]]; then
-	echo "Usage: $0 [-k] [-i file] [-s] [-a] [-b] [-x] https://host" >&2
+	usage >&2
 	exit 255
 fi
 
@@ -507,6 +539,72 @@ requireFooter "results Summary"
 check "results Graph" "/SpecimenGraph.cfm?$ATTRIBUTE_SEARCH" "200" "0" "-" "-" "" "${VISITOR[@]}"
 requireFooter "results Graph"
 
+echo "== Project search: Projects.cfm and its backing methods"
+PROJECT_SEARCH="/projects/component/search.cfc?method=search"
+# checkProjectSearch checks a call to the project search method: JSON with a row count, one session.
+# @param $1 description.
+# @param $2 query string to add to the call.
+checkProjectSearch() {
+	check "project search $1" "$PROJECT_SEARCH&$2" "200" "1" "-" "\"last_row\" *: *[0-9]+" ""
+}
+checkProjectSearch "by name, one page" "p_title=a&page=1&size=5"
+if [ "$STATUS" = "200" ]; then
+	PAGE_ROWS=$(grep -o '"project_id"' "$WORK/body" | wc -l)
+	PAGE_TOTAL=$(jsonField last_row "$WORK/body")
+	if [ "$PAGE_ROWS" -gt 5 ]; then
+		fail "project search page of size 5 returned $PAGE_ROWS rows"
+	fi
+	if [ "${PAGE_TOTAL:-0}" -gt 0 ] && [ "$PAGE_ROWS" -eq 0 ]; then
+		fail "project search found $PAGE_TOTAL projects but returned none"
+	fi
+fi
+# Tabulator sends size=true for its All choice
+checkProjectSearch "page size All" "p_title=a&size=true"
+if [ "$STATUS" = "200" ]; then
+	ALL_ROWS=$(grep -o '"project_id"' "$WORK/body" | wc -l)
+	ALL_TOTAL=$(jsonField last_row "$WORK/body")
+	ALL_PAGES=$(jsonField last_page "$WORK/body")
+	if [ "$ALL_PAGES" != "1" ] || [ "$ALL_ROWS" != "${ALL_TOTAL:-0}" ]; then
+		fail "project search page size All: $ALL_ROWS rows of $ALL_TOTAL on $ALL_PAGES pages, expected all on one"
+	fi
+fi
+# the results grid's column header filters
+for filter in filter_project_name=a filter_participants=a filter_sponsors=a filter_start_date=19 filter_end_date=20; do
+	checkProjectSearch "header filter ${filter%%=*}" "$filter"
+done
+for years in start_year=2010 end_year=2015 end_year=NULL end_year=NOT%20NULL year=2010; do
+	checkProjectSearch "${years%%=*} ${years#*=}" "$years"
+done
+# year, retired from the form but still in old links, includes projects with no end date: still running
+checkProjectSearch "ongoing projects" "end_year=NULL"
+ONGOING=$(jsonField last_row "$WORK/body")
+THIS_YEAR=$(date +%Y)
+checkProjectSearch "ongoing projects active this year" "end_year=NULL&year=$THIS_YEAR"
+if [ "${ONGOING:-0}" -gt 0 ] && [ "$(jsonField last_row "$WORK/body")" = "0" ]; then
+	fail "project search year=$THIS_YEAR leaves out the $ONGOING projects with no end date"
+fi
+# values the form wouldn't send are ignored rather than failing
+for value in start_year=abc end_year=abc year=abc sort_field=bogus sort_dir=sideways page=-3 size=0; do
+	checkProjectSearch "ignores $value" "$value"
+done
+check "project picklist" "/projects/component/search.cfc?method=getProjectAutocompleteMeta&term=a" "200" "1" "-" "\"meta\"" ""
+# dates are shown as yyyy-mm-dd, without an Oracle DATE's time
+requireAbsent "project picklist" "00:00:00"
+checkVisitorPage "/Projects.cfm?execute=true&p_title=a" bootstrap
+if ! grep -q "/shared/js/tabulator-common\\.js" "$WORK/body"; then
+	fail "visitor /Projects.cfm?execute=true&p_title=a: doesn't load tabulator-common.js"
+fi
+# loaded only when a grid is exported to Excel, so checkAssets doesn't see it
+check "Projects Excel export library" "/lib/ExcelJS/exceljs_ver4.4.0/exceljs.min.js" "200" "0" "-" "-" ""
+# the header loads tabulator-common.js only on pages with a Tabulator grid
+fetch "$HOST/Taxa.cfm"
+if grep -q "tabulator-common\\.js" "$WORK/body"; then
+	fail "/Taxa.cfm loads tabulator-common.js but has no Tabulator grid"
+fi
+# agent ids from the url are written into the agent pickers' script encoded
+check "Projects.cfm agent ids in script are encoded" "/Projects.cfm?participant_agent_id=%22%29%3B%2F%2F&sponsor_agent_id=%22%29%3B%2F%2F&transaction_agent_id=%22%29%3B%2F%2F" "200" "1" "-" "-" ""
+requireAbsent "Projects.cfm agent ids in script are encoded" '_agent_view", ""\);//"'
+
 echo "== Routes through guid/handler.cfm and errors/missing.cfm"
 if [ -n "$CATNUM" ]; then
 	GUID="MCZ:Mamm:$CATNUM"
@@ -779,7 +877,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 NODE
 		BROWSER_PAGES=(/Specimens.cfm "/Specimens.cfm?action=fixedSearch&execute=true&scientific_name=Canis%20lupus"
 			/Taxa.cfm "/Taxa.cfm?execute=true&method=getTaxa&action=search&genus=Canis" /Agents.cfm /Publications.cfm
-			/Projects.cfm /media/findMedia.cfm /specimens/browseSpecimens.cfm /specimens/PrimaryTypes.cfm
+			/Projects.cfm "/Projects.cfm?execute=true&p_title=a" /media/findMedia.cfm /specimens/browseSpecimens.cfm
+			/specimens/PrimaryTypes.cfm
 			/specimens/viewSpecimenSearchMetadata.cfm /SpecimenSearch.cfm "/SpecimenResults.cfm?$ATTRIBUTE_SEARCH"
 			/MediaSearch.cfm /document.cfm /showLocality.cfm /contact.cfm)
 		[ -n "$CATNUM" ] && BROWSER_PAGES+=("/guid/MCZ:Mamm:$CATNUM")
@@ -805,7 +904,8 @@ NODE
 			fi
 		fi
 		# A proof of concept on redesigned public pages, Projects.cfm being the first on Tabulator.
-		ACCESSIBILITY_PAGES=(/Specimens.cfm /Taxa.cfm /Projects.cfm /media/findMedia.cfm)
+		# Projects.cfm with results, so the grid is checked as well as the search form
+		ACCESSIBILITY_PAGES=(/Specimens.cfm /Taxa.cfm /Projects.cfm "/Projects.cfm?execute=true&p_title=a" /media/findMedia.cfm)
 		[ -n "$CATNUM" ] && ACCESSIBILITY_PAGES+=("/guid/MCZ:Mamm:$CATNUM")
 		[ -n "$TAXON_NAME" ] && ACCESSIBILITY_PAGES+=("/name/$(urlEncode "$TAXON_NAME")")
 		BROWSER_URLS=()
