@@ -61,26 +61,16 @@ usage() {
 	cat <<USAGE
 Usage: $0 [-h] [-k] [-i file] [-s] [-a] [-b] [-x] https://host
 
-Checks an MCZbase server as a visitor would, and prints PASS, FAIL or SKIP for each check.
-The exit status is the number of failed checks, at most 255.
+Checks an MCZbase server as a visitor would.  Exit status: the number of failures.
 
-  -h       show this help.
-  -k       accept a certificate that can't be verified, as on a test server with a
-           self-signed one.  Without it, certificates are verified.
-  -i file  read record identifiers from a file of NAME=value lines (see example.ids).
-           Values already in the environment win.  Without one, identifiers that can be
-           looked up anonymously are; checks needing UUID, SAVED_SEARCH or HIDDEN_GUID
-           are skipped.
-  -s       also run the slow checks, which wait 7 minutes for an unused session to expire.
-  -a       production: also check the old page redirects made by production's Apache
-           rewrite rules (SpecimenDetail.cfm, MediaSet.cfm and the like).
-  -b       also open pages in headless Chromium (needs chromium and node) and fail on
-           script errors, console errors, security errors and failed requests.  With
-           MCZ_COOKIE set to a logged-in browser's "CFID=...; CFTOKEN=...", staff pages
-           are opened too.
-  -x       as -b, and also check the accessibility of a few redesigned pages with
-           axe-core (WCAG 2.1 A and AA) and the developer guide's rules.  Issues are
-           reported as A11Y lines and don't count as failures.
+  -h       Show this help.
+  -k       Accept a self-signed certificate.
+  -i file  Read record identifiers from a file of NAME=value lines (see example.ids).
+  -s       Also run the slow session-expiry checks (7 minutes).
+  -a       Also check production's Apache redirects of old pages.
+  -b       Also open pages in headless Chromium and fail on errors (needs chromium, node).
+           Set MCZ_COOKIE="CFID=...; CFTOKEN=..." to include staff pages.
+  -x       As -b, plus accessibility checks (reported, not counted as failures).
 
 Examples:
   $0 -k -i test.ids https://test-server.example.edu/
