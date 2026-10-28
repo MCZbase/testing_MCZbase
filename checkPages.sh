@@ -385,8 +385,8 @@ for page in AddrPick condition DeleteEncumbrance findAccn findAgent findAgentNam
 	check "anonymous /picks/$page.cfm" "/picks/$page.cfm" "403" "1" "-" "Access denied" "allowerror"
 	requireFooter "anonymous /picks/$page.cfm"
 done
-# Upload pages removed from MCZbase; a server still holding a copy would answer 200 or 500
-for page in /tools/uploadMedia.cfm /info/upMedia.cfm /info/upMediaPreview.cfm; do
+# Pages removed from MCZbase; a server still holding a copy would answer 200, 302 or 500
+for page in /tools/uploadMedia.cfm /info/upMedia.cfm /info/upMediaPreview.cfm /form/customizeDataEntry.cfm; do
 	check "removed $page" "$page" "403|404" "-" "-" "-" "allowerror"
 done
 # Elsewhere the header's role check refuses them, ending the page after its message, so without a footer.
@@ -394,14 +394,10 @@ for page in /DataEntry.cfm /media.cfm /info/queryStats.cfm /info/recentgeorefs.c
 		/containers/browseContainers.cfm /Citation.cfm /reporting/Reports.cfm /Transactions.cfm /TAG.cfm; do
 	check "anonymous $page" "$page" "403" "1" "-" "not authorized" "allowerror"
 done
-# Replaced by /dataentry/customizeDataEntry.cfm.  A server not yet updated still has it, loaded inside
-# Data Entry without a header, so it refuses with a redirect; once master has the change, move it to
-# the removed pages above.
-check "removed /form/customizeDataEntry.cfm" "/form/customizeDataEntry.cfm" "302|404" "-" "^$|/errors/forbidden\\.cfm" "-" "allowerror"
-# Its replacement and backing methods, refused by the role check in the header and in the component.
-# A server not yet updated answers 404; once master has them, expect 403 and "not authorized".
-check "anonymous /dataentry/customizeDataEntry.cfm" "/dataentry/customizeDataEntry.cfm" "403|404" "1" "-" "-" "allowerror"
-check "anonymous Data Entry settings save" "/dataentry/component/functions.cfc?method=saveDataEntrySettings&settings=%7B%7D" "403|404" "1" "-" "-" "allowerror"
+# The Data Entry settings page and its backing methods, refused by the role check in the header and,
+# for a direct request to a method, in the component.
+check "anonymous /dataentry/customizeDataEntry.cfm" "/dataentry/customizeDataEntry.cfm" "403" "1" "-" "not authorized" "allowerror"
+check "anonymous Data Entry settings save" "/dataentry/component/functions.cfc?method=saveDataEntrySettings&settings=%7B%7D" "403" "1" "-" "not authorized" "allowerror"
 
 echo "== Pages a visitor may open: footer, current libraries, and the files they load"
 # checkAssets fails the previous check's response if a script or stylesheet it loads from this site, or
