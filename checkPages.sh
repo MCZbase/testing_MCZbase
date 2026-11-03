@@ -373,20 +373,22 @@ requireFooter "/CustomTags/"
 check "/log/" "/log/index.cfm" "403" "1" "-" "Access denied" "allowerror"
 requireFooter "/log/"
 # Folders Application.cfc refuses to a visitor before the page runs, so no parameters are needed.
-for page in /Bulkloader/BulkloaderCheck.cfm /Bulkloader/index.cfm /Reports/LoanInstructions.cfm \
+for page in /Bulkloader/index.cfm /Reports/LoanInstructions.cfm \
 		/Admin/ActivityLog.cfm /tools/BulkPartSample.cfm /tools/DataLoanBulkload.cfm; do
 	check "anonymous $page" "$page" "403" "1" "-" "Access denied" "allowerror"
 	requireFooter "anonymous $page"
 done
-for page in AddrPick condition DeleteEncumbrance findAccn findAgent findAgentName findBorrow \
+for page in AddrPick condition findAccn findAgent findBorrow \
 		findCatalogedItem findCollEvent findDeaccession findDOI findHigherGeog findLoan findMedia \
-		findNamedGroup findPart_Attribute findPart findPermit findPublication getAgentName getAttributeValues \
+		findNamedGroup findPart_Attribute findPart findPermit findPublication \
 		getPart_Attribute index KewAbbrPick LocalityPick preserve TaxaPick; do
 	check "anonymous /picks/$page.cfm" "/picks/$page.cfm" "403" "1" "-" "Access denied" "allowerror"
 	requireFooter "anonymous /picks/$page.cfm"
 done
 # Pages removed from MCZbase; a server still holding a copy would answer 200, 302 or 500
-for page in /tools/uploadMedia.cfm /info/upMedia.cfm /info/upMediaPreview.cfm /form/customizeDataEntry.cfm; do
+for page in /tools/uploadMedia.cfm /info/upMedia.cfm /info/upMediaPreview.cfm /form/customizeDataEntry.cfm \
+		/Bulkloader/BulkloaderCheck.cfm /picks/DeleteEncumbrance.cfm /picks/findAgentName.cfm \
+		/picks/getAgentName.cfm /picks/getAttributeValues.cfm; do
 	check "removed $page" "$page" "403|404" "-" "-" "-" "allowerror"
 done
 # Elsewhere the header's role check refuses them, ending the page after its message, so without a footer.
