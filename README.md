@@ -27,6 +27,15 @@ SHA-256 before running it; update the hash in `checkPages.sh` when updating axe-
 Record identifiers that can't be looked up anonymously go in a `*.ids` file (see `example.ids`), which
 git ignores: one of them names a record that isn't public.
 
+
+### Typical Test Use: 
+
+Copy the cookie from a logged-in session in a browser, and run the script with it with the -k, -x, -b, -s and -i options.  The script will check the pages and report any errors.
+
+```
+MCZ_COOKIE='CFID=....; CFTOKEN=....' ./checkPages.sh -k -x -b -s -i test.ids https://mczbase-test.rc.fas.harvard.edu/
+```
+
 ## checkMediaZoom.sh
 
 Tests MCZbase's enlarged view of media images, `/shared/js/media-zoom.js`, in headless Chromium, with
