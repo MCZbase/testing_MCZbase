@@ -10,7 +10,8 @@
 #   -k  accept a certificate that can't be verified, as for a test server with a self-signed one.
 #       Without it, certificates are verified.
 #   -i  read record identifiers (see below) from a file of NAME=value lines.
-#   -s  also run the slow checks, which wait 7 minutes for an unused session to expire.
+#   -s  also run the slow checks, which wait 7 minutes for an unused session to expire, and open every
+#       code table listed on the controlled vocabulary page.
 #   -a  production: also check the old page redirects made by production's Apache rewrite rules
 #       (SpecimenDetail.cfm, MediaSet.cfm and the like).
 #   -b  also open pages in headless Chromium (driven by node over --remote-debugging-pipe, no packages
@@ -66,7 +67,7 @@ Checks an MCZbase server as a visitor would.  Exit status: the number of failure
   -h       Show this help.
   -k       Accept a self-signed certificate.
   -i file  Read record identifiers from a file of NAME=value lines (see example.ids).
-  -s       Also run the slow session-expiry checks (7 minutes).
+  -s       Also run the slow checks: session expiry (7 minutes) and every code table.
   -a       Also check production's Apache redirects of old pages.
   -b       Also open pages in headless Chromium and fail on errors (needs chromium, node).
            Set MCZ_COOKIE="CFID=...; CFTOKEN=..." to include staff pages.
@@ -599,6 +600,20 @@ fi
 check "Projects.cfm agent ids in script are encoded" "/Projects.cfm?participant_agent_id=%22%29%3B%2F%2F&sponsor_agent_id=%22%29%3B%2F%2F&transaction_agent_id=%22%29%3B%2F%2F" "200" "1" "-" "-" ""
 requireAbsent "Projects.cfm agent ids in script are encoded" '_agent_view", ""\);//"'
 
+echo "== Controlled vocabularies: code tables show without an error"
+check "code table list" "/vocabularies/ControlledVocabulary.cfm" "200" "1" "-" "table=CTCONTINENT" ""
+# code columns not named after their table, found from the table's primary key
+for table in CTCONTINENT CTSHIPMENT_CARRIER CTTAXON_RELATION; do
+	check "code table $table" "/vocabularies/ControlledVocabulary.cfm?table=$table" "200" "1" "-" "-" ""
+done
+check "code table with a field value" "/vocabularies/ControlledVocabulary.cfm?table=CTCONTINENT&field=Asia" "200" "1" "-" "-" ""
+# the media bulkloader takes licenses by their numeric id
+check "media licenses list their ids" "/vocabularies/ControlledVocabulary.cfm?table=CTMEDIA_LICENSE" "200" "1" "-" "media_license_id" ""
+# code tables the public account must be able to read by name (public synonym and grant)
+for table in CTEXTENT_UNITS CTHISTO_DEPTH CTHISTO_FIXATIVE CTHISTO_SECTION_PLANE; do
+	check "code table $table" "/vocabularies/ControlledVocabulary.cfm?table=$table" "200" "1" "-" "-" ""
+done
+
 echo "== Routes through guid/handler.cfm and errors/missing.cfm"
 if [ -n "$CATNUM" ]; then
 	GUID="MCZ:Mamm:$CATNUM"
@@ -883,7 +898,9 @@ NODE
 		if [ -n "$MCZ_COOKIE" ]; then
 			BROWSER_PAGES+=(/DataEntry.cfm "/media.cfm?action=newMedia" /Transactions.cfm /reporting/Reports.cfm
 				/info/queryStats.cfm /info/recentgeorefs.cfm /containers/browseContainers.cfm /Citation.cfm
-				/loanByBarcode.cfm /Bulkloader/index.cfm /tools/BulkPartSample.cfm /users/UserProfile.cfm
+				/loanByBarcode.cfm /Bulkloader/index.cfm /tools/BulkPartSample.cfm /tools/DataLoanBulkload.cfm
+				/tools/BulkloadMedia.cfm /tools/BulkloadAttributes.cfm /tools/BulkloadCitations.cfm
+				/vocabularies/manageControlledVocabulary.cfm /vocabularies/ctmedia_license.cfm /users/UserProfile.cfm
 				/localities/Localities.cfm /localities/CollectingEvents.cfm /publications/Journals.cfm
 				/grouping/NamedCollection.cfm /metrics/Dashboard.cfm /media/debugMediaGallery.cfm)
 		else
@@ -934,6 +951,16 @@ if [ "$SLOW" = "1" ]; then
 	check "unused client: after 7 minutes its session has ended" "/Specimens.cfm" "200" "1" "-" "-" "" -c "$WORK/once.txt" -b "$WORK/once.txt"
 	check "returning client: after 7 minutes its session is kept" "/Specimens.cfm" "200" "0" "-" "-" "" -c "$WORK/returning.txt" -b "$WORK/returning.txt"
 	checkUrlTokenKept "url token client: after 7 minutes its session is kept"
+
+	echo "== Slow: every code table listed on the controlled vocabulary page shows without an error"
+	fetch "$HOST/vocabularies/ControlledVocabulary.cfm"
+	CODE_TABLES=$(grep -oE 'ControlledVocabulary\.cfm\?table=[A-Za-z0-9_]+"' "$WORK/body" | sed -E 's/.*table=([A-Za-z0-9_]+)"/\1/' | sort -u)
+	if [ -z "$CODE_TABLES" ]; then
+		fail "controlled vocabulary page lists no code tables"
+	fi
+	for table in $CODE_TABLES; do
+		check "code table $table" "/vocabularies/ControlledVocabulary.cfm?table=$table" "200" "1" "-" "-" ""
+	done
 fi
 
 echo "== $PASSED passed, $FAILED failed, $SKIPPED skipped${A11Y_ISSUES:+, $A11Y_ISSUES accessibility issues}"
