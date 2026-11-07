@@ -959,7 +959,12 @@ if [ "$SLOW" = "1" ]; then
 		fail "controlled vocabulary page lists no code tables"
 	fi
 	for table in $CODE_TABLES; do
-		check "code table $table" "/vocabularies/ControlledVocabulary.cfm?table=$table" "200" "1" "-" "-" ""
+		if [ "$table" = "CTGEOLOGY_ATTRIBUTE_HIERARCHY" ]; then
+			# shown on its own page
+			check "code table $table" "/vocabularies/ControlledVocabulary.cfm?table=$table" "302" "1" "/vocabularies/showGeologicalHierarchies\.cfm" "-" ""
+		else
+			check "code table $table" "/vocabularies/ControlledVocabulary.cfm?table=$table" "200" "1" "-" "-" ""
+		fi
 	done
 fi
 
