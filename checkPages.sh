@@ -283,16 +283,20 @@ fi
 # with a body that parses as that serialization and describes the record.
 # @param $1 the guid.
 # @param $2 the catalog number.
-# @param $3 the media type to put in the Accept header.
+# @param $3 the media type expected back, and put in the Accept header unless $5 is given.
 # @param $4 rdflib's name for the serialization.
+# @param $5 optionally, the whole Accept header, as a client listing types with quality values sends.
 checkRdf() {
-	local guid="$1" catnum="$2" mediaType="$3" format="$4" description="/guid/ Accept: $3" problem
-	check "$description" "/guid/$guid" "200" "1" "-" "-" "" -H "Accept: $mediaType"
+	local guid="$1" catnum="$2" mediaType="$3" format="$4" accept="${5:-$3}" problem
+	local description="/guid/ Accept: $accept"
+	check "$description" "/guid/$guid" "200" "1" "-" "-" "" -H "Accept: $accept"
 	if [ "$STATUS" != "200" ]; then
 		return
 	fi
 	if [[ "$(echo "$CONTENT_TYPE" | tr 'A-Z' 'a-z')" != "$mediaType"* ]]; then
-		fail "$description content type is [$CONTENT_TYPE]"
+		# not parsed: the body is some other serialization, or the html page
+		fail "$description content type is [$CONTENT_TYPE], expected $mediaType"
+		return
 	fi
 	if [ "$HAVE_RDFLIB" = "1" ]; then
 		if problem=$(python3 -I -c "$RDF_PARSER" "$WORK/body" "$format" "$guid" "$catnum" 2>&1); then
@@ -683,6 +687,8 @@ if [ -n "$CATNUM" ]; then
 	checkRdf "$GUID" "$CATNUM" "text/turtle" "turtle"
 	checkRdf "$GUID" "$CATNUM" "application/ld+json" "json-ld"
 	checkRdf "$GUID" "$CATNUM" "application/rdf+xml" "xml"
+	# as linked data clients send it: parameters, quality values and spaces after the commas
+	checkRdf "$GUID" "$CATNUM" "text/turtle" "turtle" "text/turtle;q=1.0, */*;q=0.1"
 	check "/specimen/ old API redirects to /guid/" "/specimen/MCZ/Mamm/$CATNUM" "301" "-" "/guid/$GUID\$" "-" ""
 else
 	skip "/guid/ specimen page, json, turtle, content negotiation, /specimen/" CATNUM
