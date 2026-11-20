@@ -251,6 +251,62 @@ requireNumber() {
 	fi
 }
 
+# RDF_PARSER parses a response as RDF with rdflib and requires the dwc:Occurrence it describes:
+# arguments are the file, rdflib's name for the format, the guid and the catalog number.  The body is
+# the server's, so it is passed as data, and python runs isolated (-I).
+RDF_PARSER='
+import sys
+from rdflib import Graph, Literal, Namespace, RDF
+path, fmt, guid, catnum = sys.argv[1:5]
+graph = Graph()
+try:
+    graph.parse(path, format=fmt)
+except Exception as e:
+    print("does not parse as %s: %s" % (fmt, (" ".join(str(e).split()) or type(e).__name__)[:200]))
+    sys.exit(1)
+DWC = Namespace("http://rs.tdwg.org/dwc/terms/")
+occurrences = [s for s in graph.subjects(RDF.type, DWC.Occurrence) if str(s).endswith("/guid/" + guid)]
+if not occurrences:
+    print("%d triples, but no dwc:Occurrence with an IRI ending in /guid/%s" % (len(graph), guid))
+    sys.exit(1)
+if (occurrences[0], DWC.catalogNumber, Literal(catnum)) not in graph:
+    print("the dwc:Occurrence has no dwc:catalogNumber %s" % catnum)
+    sys.exit(1)
+'
+if python3 -I -c 'import rdflib' 2>/dev/null; then
+	HAVE_RDFLIB=1
+else
+	HAVE_RDFLIB=0
+fi
+
+# checkRdf requests a /guid/ record by content negotiation and requires the media type asked for,
+# with a body that parses as that serialization and describes the record.
+# @param $1 the guid.
+# @param $2 the catalog number.
+# @param $3 the media type to put in the Accept header.
+# @param $4 rdflib's name for the serialization.
+checkRdf() {
+	local guid="$1" catnum="$2" mediaType="$3" format="$4" description="/guid/ Accept: $3" problem
+	check "$description" "/guid/$guid" "200" "1" "-" "-" "" -H "Accept: $mediaType"
+	if [ "$STATUS" != "200" ]; then
+		return
+	fi
+	if [[ "$(echo "$CONTENT_TYPE" | tr 'A-Z' 'a-z')" != "$mediaType"* ]]; then
+		fail "$description content type is [$CONTENT_TYPE]"
+	fi
+	if [ "$HAVE_RDFLIB" = "1" ]; then
+		if problem=$(python3 -I -c "$RDF_PARSER" "$WORK/body" "$format" "$guid" "$catnum" 2>&1); then
+			PASSED=$((PASSED + 1))
+			echo "PASS  $description parses as $format"
+		else
+			fail "$description: $problem"
+		fi
+	else
+		SKIPPED=$((SKIPPED + 1))
+		printf 'SKIP  %-58s %s\n' "$description parses as $format" "install python3 rdflib"
+	fi
+}
+
 echo "== Requests identified as $USER_AGENT"
 echo "== Looking up identifiers"
 if [ -z "$CATNUM" ] || [ -z "$COLL_OBJECT_ID" ]; then
@@ -623,9 +679,13 @@ if [ -n "$CATNUM" ]; then
 		fail "/guid/ json content type is [$CONTENT_TYPE]"
 	fi
 	check "/guid/ turtle" "/guid/$GUID/turtle" "200" "1" "-" "-" ""
+	# content negotiation: each RDF serialization asked for in the Accept header
+	checkRdf "$GUID" "$CATNUM" "text/turtle" "turtle"
+	checkRdf "$GUID" "$CATNUM" "application/ld+json" "json-ld"
+	checkRdf "$GUID" "$CATNUM" "application/rdf+xml" "xml"
 	check "/specimen/ old API redirects to /guid/" "/specimen/MCZ/Mamm/$CATNUM" "301" "-" "/guid/$GUID\$" "-" ""
 else
-	skip "/guid/ specimen page, json, turtle, /specimen/" CATNUM
+	skip "/guid/ specimen page, json, turtle, content negotiation, /specimen/" CATNUM
 fi
 check "/guid/ for a record that doesn't exist" "/guid/MCZ:Mamm:99999999999" "404" "1" "-" "-" "allowerror"
 requireFooter "/guid/ for a record that doesn't exist"

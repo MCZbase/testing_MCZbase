@@ -11,7 +11,9 @@ headless Chromium and reports script errors and failed requests; with a logged-i
 pages, with axe-core (WCAG 2.1 A and AA) and the MCZbase developer guide's own rules; legacy pages are
 left out, as they are being replaced.  `./checkPages.sh -h` describes the options.
 
-Needs bash, curl and perl; `-b` and `-x` also need chromium and node (no packages).
+Needs bash, curl and perl; `-b` and `-x` also need chromium and node (no packages).  The `/guid/`
+content negotiation checks parse the Turtle, JSON-LD and RDF/XML they get back with python3 and rdflib
+(`python3-rdflib`), and are skipped without them.
 
 `vendor/axe-core-4.13.0/` holds axe-core's `axe.min.js` from the npm release, checked against the
 registry's integrity hash when added, with its license (MPL-2.0).  The script checks the file's
